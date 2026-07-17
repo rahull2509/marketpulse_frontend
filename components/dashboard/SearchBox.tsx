@@ -9,26 +9,43 @@ interface SearchBoxProps {
   placeholder?: string;
 }
 
-export function SearchBox({ value, onChange, placeholder = "Search stocks..." }: SearchBoxProps) {
+export function SearchBox({
+  value,
+  onChange,
+  placeholder = "Search by symbol, name...",
+}: SearchBoxProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div
-      className="flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors focus-within:border-[var(--border-accent)]"
       style={{
-        borderColor: "var(--border-secondary)",
-        backgroundColor: "var(--bg-secondary)",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        width: 260,
       }}
     >
-      <Search className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+      <Search
+        size={16}
+        style={{
+          position: "absolute",
+          left: 12,
+          color: "var(--text-muted)",
+          pointerEvents: "none",
+        }}
+      />
       <input
         ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full min-w-[200px] bg-transparent text-xs outline-none placeholder:text-[var(--text-muted)]"
-        style={{ color: "var(--text-primary)" }}
+        className="input"
+        style={{
+          width: "100%",
+          paddingLeft: 36,
+          paddingRight: value ? 36 : 12,
+        }}
       />
       {value && (
         <button
@@ -36,10 +53,22 @@ export function SearchBox({ value, onChange, placeholder = "Search stocks..." }:
             onChange("");
             inputRef.current?.focus();
           }}
-          className="rounded p-0.5 transition-colors hover:bg-[var(--bg-hover)]"
-          style={{ color: "var(--text-tertiary)" }}
+          style={{
+            position: "absolute",
+            right: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
+            height: 20,
+            borderRadius: "var(--radius-xs)",
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            color: "var(--text-tertiary)",
+          }}
         >
-          <X className="h-3 w-3" />
+          <X size={14} />
         </button>
       )}
     </div>

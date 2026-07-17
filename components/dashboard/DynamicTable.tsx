@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -11,7 +11,6 @@ import {
   flexRender,
 } from "@tanstack/react-table";
 import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
-import { useMarketStore } from "@/stores/market";
 import { useColumnStore } from "@/stores/columns";
 import {
   formatCurrency,
@@ -24,20 +23,28 @@ import type { StockRecord } from "@/types/stock";
 import type { ColumnMetadata } from "@/types/metadata";
 import Link from "next/link";
 
-// ── Cell Renderer ──────────────────────────────────────────────────────
+/* ── Cell Renderer ────────────────────────────────────────────── */
 
-function renderCell(value: unknown, meta: ColumnMetadata | undefined): React.ReactNode {
-  if (value === null || value === undefined) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+function renderCell(
+  value: unknown,
+  meta: ColumnMetadata | undefined
+): React.ReactNode {
+  if (value === null || value === undefined)
+    return (
+      <span style={{ color: "var(--text-muted)" }}>—</span>
+    );
 
   const unit = meta?.unit || "";
   const type = meta?.type || "string";
   const column = meta?.column || "";
 
-  // Special columns
   if (column === "day_change_pct" || unit === "%") {
     const num = Number(value);
     return (
-      <span className={`font-tabular font-medium ${getChangeClass(num)}`}>
+      <span
+        className={`font-tabular ${getChangeClass(num)}`}
+        style={{ fontWeight: 500 }}
+      >
         {formatPercent(num)}
       </span>
     );
@@ -46,17 +53,28 @@ function renderCell(value: unknown, meta: ColumnMetadata | undefined): React.Rea
   if (column === "Net Change") {
     const num = Number(value);
     return (
-      <span className={`font-tabular font-medium ${getChangeClass(num)}`}>
+      <span
+        className={`font-tabular ${getChangeClass(num)}`}
+        style={{ fontWeight: 500 }}
+      >
         {formatChange(num)}
       </span>
     );
   }
 
   if (unit === "₹" && type === "number") {
-    return <span className="font-tabular">{formatCurrency(value)}</span>;
+    return (
+      <span className="font-tabular" style={{ fontWeight: 500 }}>
+        {formatCurrency(value)}
+      </span>
+    );
   }
 
-  if (column === "Volume" || column === "Total Buy Quantity" || column === "Total Sell Quantity") {
+  if (
+    column === "Volume" ||
+    column === "Total Buy Quantity" ||
+    column === "Total Sell Quantity"
+  ) {
     return <span className="font-tabular">{formatVolume(value)}</span>;
   }
 
@@ -64,8 +82,18 @@ function renderCell(value: unknown, meta: ColumnMetadata | undefined): React.Rea
     return (
       <Link
         href={`/stock/${encodeURIComponent(String(value))}`}
-        className="font-semibold transition-colors hover:underline"
-        style={{ color: "var(--color-accent)" }}
+        style={{
+          fontWeight: 600,
+          color: "var(--text-primary)",
+          textDecoration: "none",
+          transition: "color var(--transition-fast)",
+        }}
+        onMouseOver={(e) => {
+          e.currentTarget.style.color = "var(--color-accent)";
+        }}
+        onMouseOut={(e) => {
+          e.currentTarget.style.color = "var(--text-primary)";
+        }}
       >
         {String(value)}
       </Link>
@@ -74,21 +102,37 @@ function renderCell(value: unknown, meta: ColumnMetadata | undefined): React.Rea
 
   if (type === "number") {
     const num = Number(value);
-    if (!isNaN(num)) return <span className="font-tabular">{num.toFixed(2)}</span>;
+    if (!isNaN(num))
+      return <span className="font-tabular">{num.toFixed(2)}</span>;
   }
 
   return <span>{String(value)}</span>;
 }
 
-// ── Sort Header ────────────────────────────────────────────────────────
+/* ── Sort Icon ────────────────────────────────────────────────── */
 
-function SortIcon({ isSorted }: { isSorted: false | "asc" | "desc" }) {
-  if (isSorted === "asc") return <ArrowUp className="h-3 w-3" />;
-  if (isSorted === "desc") return <ArrowDown className="h-3 w-3" />;
-  return <ArrowUpDown className="h-3 w-3 opacity-30" />;
+function SortIcon({
+  isSorted,
+}: {
+  isSorted: false | "asc" | "desc";
+}) {
+  if (isSorted === "asc")
+    return (
+      <ArrowUp size={12} style={{ color: "var(--color-accent)" }} />
+    );
+  if (isSorted === "desc")
+    return (
+      <ArrowDown size={12} style={{ color: "var(--color-accent)" }} />
+    );
+  return (
+    <ArrowUpDown
+      size={12}
+      style={{ color: "var(--text-muted)", opacity: 0.5 }}
+    />
+  );
 }
 
-// ── Main Component ─────────────────────────────────────────────────────
+/* ── Main Table ───────────────────────────────────────────────── */
 
 interface DynamicTableProps {
   data: StockRecord[];
@@ -100,14 +144,12 @@ export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
   const { visibleColumns } = useColumnStore();
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  // Build a metadata lookup
   const metaMap = useMemo(() => {
     const map = new Map<string, ColumnMetadata>();
     metadata.forEach((m) => map.set(m.column, m));
     return map;
   }, [metadata]);
 
-  // Generate columns from metadata + visible list
   const columns = useMemo<ColumnDef<StockRecord>[]>(() => {
     return visibleColumns
       .map((colName) => {
@@ -120,7 +162,22 @@ export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
           accessorFn: (row) => row[colName],
           header: ({ column: tableCol }) => (
             <button
-              className="flex items-center gap-1"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                font: "inherit",
+                color: "inherit",
+                padding: 0,
+                fontWeight: 600,
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                whiteSpace: "nowrap",
+              }}
               onClick={() => tableCol.toggleSorting()}
             >
               {displayName}
@@ -145,22 +202,36 @@ export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    globalFilterFn: (row, columnId, filterValue) => {
+    globalFilterFn: (row, _columnId, filterValue) => {
       const search = String(filterValue).toLowerCase();
-      const instrument = String(row.original.Instrument || "").toLowerCase();
-      const symbol = String(row.original.trading_symbol || "").toLowerCase();
-      const company = String(row.original.company_name || "").toLowerCase();
-      return instrument.includes(search) || symbol.includes(search) || company.includes(search);
+      const instrument = String(
+        row.original.Instrument || ""
+      ).toLowerCase();
+      const symbol = String(
+        row.original.trading_symbol || ""
+      ).toLowerCase();
+      const company = String(
+        row.original.company_name || ""
+      ).toLowerCase();
+      return (
+        instrument.includes(search) ||
+        symbol.includes(search) ||
+        company.includes(search)
+      );
     },
   });
 
   if (!columns.length) {
     return (
       <div
-        className="flex items-center justify-center rounded-lg border py-20"
+        className="card"
         style={{
-          borderColor: "var(--border-primary)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "64px 24px",
           color: "var(--text-tertiary)",
+          fontSize: 13,
         }}
       >
         No columns selected. Use the column selector to choose visible columns.
@@ -178,11 +249,20 @@ export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
                 <th
                   key={header.id}
                   className={idx === 0 ? "sticky-col" : ""}
-                  style={{ minWidth: idx === 0 ? "120px" : "90px" }}
+                  style={{
+                    minWidth: idx === 0 ? 120 : 90,
+                    textAlign:
+                      metaMap.get(header.id)?.type === "number" && idx !== 0
+                        ? "right"
+                        : "left",
+                  }}
                 >
                   {header.isPlaceholder
                     ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())}
+                    : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
                 </th>
               ))}
             </tr>
@@ -193,8 +273,12 @@ export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
             <tr>
               <td
                 colSpan={columns.length}
-                className="py-16 text-center"
-                style={{ color: "var(--text-tertiary)" }}
+                style={{
+                  height: 200,
+                  textAlign: "center",
+                  color: "var(--text-tertiary)",
+                  fontSize: 13,
+                }}
               >
                 No stocks match your search or filters.
               </td>
@@ -206,8 +290,18 @@ export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
                   <td
                     key={cell.id}
                     className={idx === 0 ? "sticky-col" : ""}
+                    style={{
+                      textAlign:
+                        metaMap.get(cell.column.id)?.type === "number" &&
+                        idx !== 0
+                          ? "right"
+                          : "left",
+                    }}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    {flexRender(
+                      cell.column.columnDef.cell,
+                      cell.getContext()
+                    )}
                   </td>
                 ))}
               </tr>

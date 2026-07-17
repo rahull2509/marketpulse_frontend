@@ -2,147 +2,346 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TopBar } from "@/components/layout/TopBar";
+import { motion } from "framer-motion";
+import { TopNavigation } from "@/components/layout/TopNavigation";
 import { DynamicTable } from "@/components/dashboard/DynamicTable";
-import { LoadingState, ErrorState, EmptyState, SkeletonTable } from "@/components/common/States";
+import { Pagination } from "@/components/common/Pagination";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonTable,
+} from "@/components/common/States";
 import { fetchHistory, fetchAvailableDates } from "@/services/data";
 import type { StockRecord } from "@/types/stock";
-import { Calendar, Clock, Search } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  Search,
+  RotateCcw,
+  Download,
+  Filter,
+  History,
+} from "lucide-react";
+
+function LabeledInput({
+  label,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label
+        style={{
+          fontSize: 10,
+          fontWeight: 500,
+          color: "var(--text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        {Icon && <Icon size={10} />}
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
 
 export default function HistoryPage() {
   const [selectedDate, setSelectedDate] = useState("today");
   const [searchSymbol, setSearchSymbol] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState({
+    date: "today",
+    symbol: "",
+    startTime: "",
+    endTime: "",
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   // Available dates
   const datesQuery = useQuery({
     queryKey: ["history-dates"],
     queryFn: async () => {
       const res = await fetchAvailableDates();
-      return res.data;
+      return res.data || [];
     },
   });
 
-  // Historical data
+  // Historical data (only fires when Apply is clicked)
   const historyQuery = useQuery({
-    queryKey: ["history", selectedDate, searchSymbol, startTime, endTime],
+    queryKey: [
+      "history",
+      appliedFilters.date,
+      appliedFilters.symbol,
+      appliedFilters.startTime,
+      appliedFilters.endTime,
+    ],
     queryFn: async () => {
       const res = await fetchHistory({
-        date: selectedDate,
-        symbol: searchSymbol || undefined,
-        start_time: startTime || undefined,
-        end_time: endTime || undefined,
+        date: appliedFilters.date,
+        symbol: appliedFilters.symbol || undefined,
+        start_time: appliedFilters.startTime || undefined,
+        end_time: appliedFilters.endTime || undefined,
         page: 1,
-        page_size: 500,
+        page_size: 1000,
       });
-      return res.data;
+      return res.data || [];
     },
-    enabled: !!selectedDate,
+    enabled: !!appliedFilters.date,
   });
 
-  return (
-    <div className="flex flex-col">
-      <TopBar title="Historical Data" />
+  const applyFilters = () => {
+    setAppliedFilters({
+      date: selectedDate,
+      symbol: searchSymbol,
+      startTime,
+      endTime,
+    });
+    setCurrentPage(1);
+  };
 
-      <div className="flex flex-col gap-4 p-6">
-        {/* Filters */}
-        <div className="glass-card flex flex-wrap items-end gap-4 p-4">
-          {/* Date selector */}
-          <div className="flex flex-col gap-1">
-            <label className="flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-              <Calendar className="h-3 w-3" />
-              Date
-            </label>
-            <select
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="rounded-md border bg-transparent px-3 py-1.5 text-xs"
+  const resetFilters = () => {
+    setSelectedDate("today");
+    setSearchSymbol("");
+    setStartTime("");
+    setEndTime("");
+    setAppliedFilters({ date: "today", symbol: "", startTime: "", endTime: "" });
+    setCurrentPage(1);
+  };
+
+  const allData: StockRecord[] = historyQuery.data || [];
+  const paginatedData = allData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const hasActiveFilters =
+    searchSymbol || startTime || endTime || selectedDate !== "today";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <TopNavigation title="Historical Data" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+        className="app-content"
+        style={{ padding: "var(--sp-6)" }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-5)" }}>
+          {/* Filter Toolbar */}
+          <div
+            className="card"
+            style={{
+              padding: "var(--sp-4) var(--sp-5)",
+            }}
+          >
+            <div
               style={{
-                borderColor: "var(--border-secondary)",
-                color: "var(--text-primary)",
-                backgroundColor: "var(--bg-secondary)",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "flex-end",
+                gap: "var(--sp-4)",
               }}
             >
-              <option value="today">Today</option>
-              {datesQuery.data?.map((date) => (
-                <option key={date} value={date}>{date}</option>
-              ))}
-            </select>
-          </div>
+              {/* Date */}
+              <LabeledInput label="Trading Date" icon={Calendar}>
+                <select
+                  className="select"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  style={{ height: 36, width: 160 }}
+                >
+                  <option value="today">Today</option>
+                  {datesQuery.data?.map((date) => (
+                    <option key={date} value={date}>
+                      {date}
+                    </option>
+                  ))}
+                </select>
+              </LabeledInput>
 
-          {/* Symbol filter */}
-          <div className="flex flex-col gap-1">
-            <label className="flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-              <Search className="h-3 w-3" />
-              Symbol
-            </label>
-            <input
-              type="text"
-              value={searchSymbol}
-              onChange={(e) => setSearchSymbol(e.target.value)}
-              placeholder="e.g., INFY"
-              className="w-32 rounded-md border bg-transparent px-3 py-1.5 text-xs"
-              style={{
-                borderColor: "var(--border-secondary)",
-                color: "var(--text-primary)",
-              }}
-            />
-          </div>
+              {/* Symbol */}
+              <LabeledInput label="Symbol" icon={Search}>
+                <div style={{ position: "relative" }}>
+                  <Search
+                    size={13}
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--text-muted)",
+                    }}
+                  />
+                  <input
+                    type="text"
+                    className="input"
+                    value={searchSymbol}
+                    onChange={(e) => setSearchSymbol(e.target.value)}
+                    placeholder="e.g. INFY"
+                    style={{ width: 130, paddingLeft: 30 }}
+                  />
+                </div>
+              </LabeledInput>
 
-          {/* Time range */}
-          <div className="flex flex-col gap-1">
-            <label className="flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-              <Clock className="h-3 w-3" />
-              Time Range
-            </label>
-            <div className="flex items-center gap-1">
-              <input
-                type="text"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                placeholder="09:00"
-                className="w-16 rounded-md border bg-transparent px-2 py-1.5 text-xs text-center"
+              {/* Time Range */}
+              <LabeledInput label="Time Range" icon={Clock}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                  <input
+                    type="text"
+                    className="input"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    placeholder="09:15"
+                    style={{ width: 72, textAlign: "center" }}
+                  />
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>to</span>
+                  <input
+                    type="text"
+                    className="input"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    placeholder="15:30"
+                    style={{ width: 72, textAlign: "center" }}
+                  />
+                </div>
+              </LabeledInput>
+
+              {/* Actions */}
+              <div
                 style={{
-                  borderColor: "var(--border-secondary)",
-                  color: "var(--text-primary)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                  marginLeft: "auto",
+                  paddingTop: 18,
                 }}
-              />
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>—</span>
-              <input
-                type="text"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                placeholder="15:30"
-                className="w-16 rounded-md border bg-transparent px-2 py-1.5 text-xs text-center"
-                style={{
-                  borderColor: "var(--border-secondary)",
-                  color: "var(--text-primary)",
-                }}
-              />
+              >
+                <button
+                  className="btn btn-ghost"
+                  onClick={resetFilters}
+                  title="Reset filters"
+                >
+                  <RotateCcw size={13} />
+                  Reset
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={applyFilters}
+                >
+                  <Filter size={13} />
+                  Apply
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  disabled
+                  title="Coming Soon"
+                  style={{ opacity: 0.4 }}
+                >
+                  <Download size={13} />
+                  Export
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Results */}
-        {historyQuery.isLoading ? (
-          <SkeletonTable />
-        ) : historyQuery.error ? (
-          <ErrorState
-            message="Failed to load historical data"
-            onRetry={() => historyQuery.refetch()}
-          />
-        ) : historyQuery.data && historyQuery.data.length > 0 ? (
-          <>
-            <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-              {historyQuery.data.length} records
-            </span>
-            <DynamicTable data={historyQuery.data} globalFilter="" />
-          </>
-        ) : (
-          <EmptyState message="No historical data found for the selected criteria." />
-        )}
-      </div>
+          {/* Results count */}
+          {allData.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--sp-3)",
+              }}
+            >
+              <span
+                className="font-tabular"
+                style={{ fontSize: 12, color: "var(--text-tertiary)" }}
+              >
+                {allData.length.toLocaleString("en-IN")} records
+              </span>
+              {appliedFilters.symbol && (
+                <span className="badge badge-info">
+                  {appliedFilters.symbol}
+                </span>
+              )}
+              {(appliedFilters.startTime || appliedFilters.endTime) && (
+                <span className="badge badge-neutral">
+                  {appliedFilters.startTime || "09:15"} — {appliedFilters.endTime || "15:30"}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Table */}
+          {historyQuery.isLoading ? (
+            <SkeletonTable />
+          ) : historyQuery.error ? (
+            <ErrorState
+              title="Failed to load historical data"
+              message="The data for this date could not be retrieved. It may not have been saved yet."
+              onRetry={() => historyQuery.refetch()}
+            />
+          ) : allData.length > 0 ? (
+            <>
+              <DynamicTable data={paginatedData} globalFilter="" />
+              <Pagination
+                currentPage={currentPage}
+                totalItems={allData.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setCurrentPage(1);
+                }}
+              />
+            </>
+          ) : historyQuery.isFetched ? (
+            <EmptyState
+              icon={History}
+              title="No historical data"
+              message="No records were found for the selected date and filters. Try a different date or clear the symbol filter."
+              action="Reset Filters"
+              onAction={resetFilters}
+            />
+          ) : (
+            <div
+              className="card"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "64px 24px",
+                textAlign: "center",
+              }}
+            >
+              <History
+                size={28}
+                style={{ color: "var(--text-muted)", marginBottom: 12 }}
+              />
+              <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>
+                Select filters and click Apply
+              </p>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                Choose a date, symbol, and time range to load historical data.
+              </p>
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 }

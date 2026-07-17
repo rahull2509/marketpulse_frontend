@@ -2,10 +2,18 @@
 
 import { use } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TopBar } from "@/components/layout/TopBar";
-import { LoadingState, ErrorState, EmptyState } from "@/components/common/States";
+import { motion } from "framer-motion";
+import { TopNavigation } from "@/components/layout/TopNavigation";
+import {
+  LoadingState,
+  ErrorState,
+  EmptyState,
+  SkeletonTable,
+} from "@/components/common/States";
+import { Pagination } from "@/components/common/Pagination";
 import { fetchStockDetail, fetchTimeline } from "@/services/data";
 import { useColumnStore } from "@/stores/columns";
+import { useMarketStore } from "@/stores/market";
 import {
   formatCurrency,
   formatPercent,
@@ -17,105 +25,186 @@ import {
   ArrowLeft,
   TrendingUp,
   TrendingDown,
-  BarChart3,
+  RotateCw,
   Clock,
+  BarChart3,
   Activity,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
 import type { StockRecord } from "@/types/stock";
 import type { ColumnMetadata } from "@/types/metadata";
+import { useState } from "react";
 
-function StockHeader({ stock }: { stock: StockRecord }) {
-  const change = Number(stock["Net Change"] || 0);
-  const changePct = Number(stock.day_change_pct || 0);
-  const isPositive = change > 0;
+/* ── Quick Stat Card ─────────────────────────────────────────── */
 
-  return (
-    <div className="flex items-start justify-between">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/dashboard"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-hover)]"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
-              {String(stock.trading_symbol || stock.Instrument)}
-            </h2>
-            <span
-              className="rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase"
-              style={{
-                backgroundColor: "var(--bg-tertiary)",
-                color: "var(--text-tertiary)",
-              }}
-            >
-              {String(stock.exchange || "NSE")}
-            </span>
-          </div>
-          {typeof stock.company_name === "string" && stock.company_name && (
-            <p className="mt-0.5 text-sm" style={{ color: "var(--text-secondary)" }}>
-              {stock.company_name}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="text-right">
-        <div className="text-3xl font-bold font-tabular" style={{ color: "var(--text-primary)" }}>
-          {formatCurrency(stock["Last Price"])}
-        </div>
-        <div className={`flex items-center justify-end gap-1.5 text-sm font-medium font-tabular ${getChangeClass(change)}`}>
-          {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          {formatChange(change)}
-          <span>({formatPercent(changePct)})</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, unit }: { label: string; value: unknown; unit?: string }) {
-  const formatted =
-    unit === "₹" ? formatCurrency(value) : unit === "%" ? formatPercent(value) : formatVolume(value);
+function StatCard({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: unknown;
+  unit?: string;
+}) {
+  let formatted: string;
+  if (value === null || value === undefined) {
+    formatted = "—";
+  } else if (unit === "₹") {
+    formatted = formatCurrency(value);
+  } else if (unit === "%") {
+    formatted = formatPercent(value);
+  } else {
+    const num = Number(value);
+    formatted = isNaN(num) ? String(value) : num.toLocaleString("en-IN");
+  }
 
   return (
-    <div className="glass-card flex flex-col gap-1 p-4">
-      <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+    <div className="card-compact" style={{ minWidth: 120, flex: "1 1 120px" }}>
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 500,
+          color: "var(--text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          display: "block",
+          marginBottom: 4,
+        }}
+      >
         {label}
       </span>
-      <span className="text-lg font-semibold font-tabular" style={{ color: "var(--text-primary)" }}>
+      <span
+        className="font-tabular"
+        style={{
+          fontSize: 16,
+          fontWeight: 700,
+          color: "var(--text-primary)",
+        }}
+      >
         {formatted}
       </span>
     </div>
   );
 }
 
-function IndicatorPanel({ stock, metadata }: { stock: StockRecord; metadata: ColumnMetadata[] }) {
-  // Group non-identity, non-metadata columns for display
-  const displayCols = metadata.filter(
-    (m) => !["Identity", "Metadata"].includes(m.group) && m.column in stock
-  );
+/* ── Indicator Card ──────────────────────────────────────────── */
 
-  const groups = [...new Set(displayCols.map((m) => m.group))];
+function IndicatorCard({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: unknown;
+  unit?: string;
+}) {
+  let display: string;
+  if (value === null || value === undefined) {
+    display = "—";
+  } else if (unit === "₹") {
+    display = formatCurrency(value);
+  } else if (unit === "%") {
+    display = formatPercent(Number(value));
+  } else {
+    const num = Number(value);
+    display = isNaN(num) ? String(value) : num.toLocaleString("en-IN", { maximumFractionDigits: 4 });
+  }
 
   return (
-    <div className="space-y-6">
-      {groups.map((group) => {
+    <div
+      className="card"
+      style={{ padding: "var(--sp-3) var(--sp-4)", minWidth: 140 }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 6,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 500,
+            color: "var(--text-tertiary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {label}
+        </span>
+        {unit && (
+          <span
+            style={{
+              fontSize: 9,
+              color: "var(--text-muted)",
+              backgroundColor: "var(--bg-tertiary)",
+              padding: "1px 5px",
+              borderRadius: "var(--radius-xs)",
+            }}
+          >
+            {unit}
+          </span>
+        )}
+      </div>
+      <span
+        className="font-tabular"
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: "var(--text-primary)",
+        }}
+      >
+        {display}
+      </span>
+    </div>
+  );
+}
+
+/* ── Indicator Sections ──────────────────────────────────────── */
+
+function IndicatorSection({
+  stock,
+  metadata,
+}: {
+  stock: StockRecord;
+  metadata: ColumnMetadata[];
+}) {
+  const SKIP_GROUPS = ["Identity", "Metadata"];
+  const displayCols = metadata.filter(
+    (m) => !SKIP_GROUPS.includes(m.group) && m.column in stock
+  );
+  const groupNames = [...new Set(displayCols.map((m) => m.group))];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-5)" }}>
+      {groupNames.map((group) => {
         const cols = displayCols.filter((m) => m.group === group);
         return (
           <div key={group}>
             <h3
-              className="mb-3 text-xs font-semibold uppercase tracking-wider"
-              style={{ color: "var(--text-tertiary)" }}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--text-tertiary)",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                marginBottom: "var(--sp-3)",
+              }}
             >
               {group}
             </h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--sp-3)",
+              }}
+            >
               {cols.map((col) => (
-                <StatCard
+                <IndicatorCard
                   key={col.column}
                   label={col.display_name}
                   value={stock[col.column]}
@@ -130,78 +219,247 @@ function IndicatorPanel({ stock, metadata }: { stock: StockRecord; metadata: Col
   );
 }
 
-function MinuteTimeline({ timeline }: { timeline: StockRecord[] }) {
+/* ── Timeline Table ──────────────────────────────────────────── */
+
+function TimelineTable({ timeline }: { timeline: StockRecord[] }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+
   if (!timeline.length) {
-    return <EmptyState message="No timeline data available for today" />;
+    return (
+      <EmptyState
+        icon={Clock}
+        title="No timeline data"
+        message="Minute-by-minute data is not available for this trading session."
+      />
+    );
   }
 
-  // Find min/max price for scaling
-  const prices = timeline
-    .map((t) => Number(t["Last Price"]))
-    .filter((p) => !isNaN(p));
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const range = maxPrice - minPrice || 1;
+  const paginated = timeline.slice((page - 1) * pageSize, page * pageSize);
+  const firstPrice = Number(timeline[0]?.["Last Price"] ?? 0);
 
   return (
-    <div className="glass-card overflow-hidden p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-          <Clock className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
-          Minute-by-Minute Timeline
-        </h3>
-        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-          {timeline.length} data points
-        </span>
+    <div>
+      <div className="table-container">
+        <table className="market-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th style={{ textAlign: "right" }}>Price (₹)</th>
+              <th style={{ textAlign: "right" }}>Change</th>
+              <th style={{ textAlign: "right" }}>Volume</th>
+              <th style={{ textAlign: "right" }}>Avg Price (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginated.map((row, idx) => {
+              const price = Number(row["Last Price"] ?? 0);
+              const prevPrice =
+                idx === 0
+                  ? firstPrice
+                  : Number(paginated[idx - 1]?.["Last Price"] ?? price);
+              const change = price - prevPrice;
+              const isUp = change >= 0;
+
+              return (
+                <tr key={idx}>
+                  <td style={{ color: "var(--text-tertiary)", fontSize: 12 }}>
+                    {String(row.time || "—")}
+                  </td>
+                  <td
+                    className="font-tabular"
+                    style={{ textAlign: "right", fontWeight: 500 }}
+                  >
+                    {formatCurrency(price)}
+                  </td>
+                  <td
+                    className="font-tabular"
+                    style={{
+                      textAlign: "right",
+                      color: isUp
+                        ? "var(--color-positive)"
+                        : "var(--color-negative)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {idx === 0 ? "—" : formatChange(change)}
+                  </td>
+                  <td
+                    className="font-tabular"
+                    style={{ textAlign: "right", color: "var(--text-secondary)" }}
+                  >
+                    {formatVolume(row.Volume)}
+                  </td>
+                  <td
+                    className="font-tabular"
+                    style={{ textAlign: "right", color: "var(--text-secondary)" }}
+                  >
+                    {formatCurrency(row["Average Price"])}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+      {timeline.length > pageSize && (
+        <Pagination
+          currentPage={page}
+          totalItems={timeline.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={() => {}}
+          pageSizeOptions={[25]}
+        />
+      )}
+    </div>
+  );
+}
 
-      {/* Simple bar chart visualization */}
-      <div className="flex items-end gap-px" style={{ height: "120px" }}>
-        {timeline.map((point, idx) => {
-          const price = Number(point["Last Price"] || 0);
-          const height = ((price - minPrice) / range) * 100;
-          const prevPrice = idx > 0 ? Number(timeline[idx - 1]["Last Price"] || 0) : price;
-          const isUp = price >= prevPrice;
+/* ── Stock Header ────────────────────────────────────────────── */
 
-          return (
-            <div
-              key={idx}
-              className="group relative flex-1 cursor-pointer transition-opacity hover:opacity-80"
-              title={`${point.time || ""}: ${formatCurrency(price)}`}
+function StockHeader({
+  stock,
+  marketStatus,
+  onRefresh,
+}: {
+  stock: StockRecord;
+  marketStatus: import("@/types/stock").MarketStatusData | null;
+  onRefresh: () => void;
+}) {
+  const change = Number(stock["Net Change"] ?? 0);
+  const changePct = Number(stock.day_change_pct ?? 0);
+  const isPositive = change > 0;
+  const isNegative = change < 0;
+  const isLive = marketStatus?.is_open ?? false;
+
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "var(--sp-5) var(--sp-6)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: "var(--sp-6)",
+      }}
+    >
+      {/* Left — Identification */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--sp-4)" }}>
+        <Link
+          href="/dashboard"
+          className="btn btn-ghost btn-icon"
+          style={{ flexShrink: 0, marginTop: 4 }}
+          title="Back to Dashboard"
+        >
+          <ArrowLeft size={16} />
+        </Link>
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--sp-3)",
+              marginBottom: 4,
+            }}
+          >
+            <h2
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: "var(--text-primary)",
+                lineHeight: 1,
+              }}
             >
-              <div
-                className="w-full rounded-t-sm transition-all"
-                style={{
-                  height: `${Math.max(height, 2)}%`,
-                  backgroundColor: isUp ? "var(--color-positive)" : "var(--color-negative)",
-                  opacity: 0.7,
-                }}
-              />
-            </div>
-          );
-        })}
+              {String(stock.trading_symbol || stock.Instrument)}
+            </h2>
+            <span
+              className="badge badge-neutral"
+              style={{ fontSize: 10 }}
+            >
+              {String(stock.exchange || "NSE")}
+            </span>
+            {isLive ? (
+              <span className="badge badge-live">
+                <span className="live-dot" />
+                LIVE
+              </span>
+            ) : (
+              <span className="badge badge-closed">CLOSED</span>
+            )}
+          </div>
+          {typeof stock.company_name === "string" && stock.company_name && (
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--text-secondary)",
+              }}
+            >
+              {stock.company_name}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Time labels */}
-      <div className="mt-2 flex justify-between">
-        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          {String(timeline[0]?.time || "09:00")}
-        </span>
-        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          {String(timeline[Math.floor(timeline.length / 2)]?.time || "12:15")}
-        </span>
-        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          {String(timeline[timeline.length - 1]?.time || "15:30")}
-        </span>
+      {/* Right — Price */}
+      <div style={{ textAlign: "right", display: "flex", alignItems: "flex-start", gap: "var(--sp-3)" }}>
+        <div>
+          <div
+            className="font-tabular"
+            style={{
+              fontSize: 28,
+              fontWeight: 700,
+              color: "var(--text-primary)",
+              lineHeight: 1,
+              marginBottom: 4,
+            }}
+          >
+            {formatCurrency(stock["Last Price"])}
+          </div>
+          <div
+            className={`font-tabular ${getChangeClass(change)}`}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              justifyContent: "flex-end",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            {isPositive ? (
+              <TrendingUp size={14} />
+            ) : isNegative ? (
+              <TrendingDown size={14} />
+            ) : null}
+            {formatChange(change)}
+            <span>({formatPercent(changePct)})</span>
+          </div>
+        </div>
+        <button
+          className="btn btn-ghost btn-icon"
+          onClick={onRefresh}
+          title="Refresh"
+          style={{ marginTop: 4 }}
+        >
+          <RotateCw size={14} />
+        </button>
       </div>
     </div>
   );
 }
 
-export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
+/* ── Page ────────────────────────────────────────────────────── */
+
+export default function StockPage({
+  params,
+}: {
+  params: Promise<{ symbol: string }>;
+}) {
   const { symbol } = use(params);
   const decodedSymbol = decodeURIComponent(symbol);
   const { metadata } = useColumnStore();
+  const marketStatus = useMarketStore((s) => s.marketStatus);
 
   const stockQuery = useQuery({
     queryKey: ["stock", decodedSymbol],
@@ -217,32 +475,190 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
     queryKey: ["timeline", decodedSymbol],
     queryFn: async () => {
       const res = await fetchTimeline(decodedSymbol);
-      if (!res.success) throw new Error(res.error?.message);
+      if (!res.success) return [];
       return res.data;
     },
     refetchInterval: 60_000,
   });
 
-  return (
-    <div className="flex flex-col">
-      <TopBar title={`Stock: ${decodedSymbol}`} />
+  // Quick stats columns
+  const QUICK_STAT_COLS = [
+    { key: "Open", label: "Open", unit: "₹" },
+    { key: "High", label: "High", unit: "₹" },
+    { key: "Low", label: "Low", unit: "₹" },
+    { key: "Close", label: "Prev Close", unit: "₹" },
+    { key: "Average Price", label: "Avg Price", unit: "₹" },
+    { key: "Volume", label: "Volume", unit: "" },
+    { key: "Total Buy Quantity", label: "Buy Qty", unit: "" },
+    { key: "Total Sell Quantity", label: "Sell Qty", unit: "" },
+  ];
 
-      <div className="flex flex-col gap-6 p-6">
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <TopNavigation title={`Stock Analytics`} />
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+        className="app-content"
+        style={{ padding: "var(--sp-6)" }}
+      >
         {stockQuery.isLoading ? (
           <LoadingState message={`Loading ${decodedSymbol}...`} />
         ) : stockQuery.error ? (
           <ErrorState
-            message={`Failed to load ${decodedSymbol}`}
+            title={`Cannot load ${decodedSymbol}`}
+            message="The stock data could not be retrieved. The symbol may not exist or the server is unavailable."
             onRetry={() => stockQuery.refetch()}
           />
         ) : stockQuery.data ? (
-          <>
-            <StockHeader stock={stockQuery.data} />
-            <MinuteTimeline timeline={timelineQuery.data || []} />
-            <IndicatorPanel stock={stockQuery.data} metadata={metadata} />
-          </>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--sp-5)",
+            }}
+          >
+            {/* Stock Header */}
+            <StockHeader
+              stock={stockQuery.data}
+              marketStatus={marketStatus}
+              onRefresh={() => {
+                stockQuery.refetch();
+                timelineQuery.refetch();
+              }}
+            />
+
+            {/* Quick Stats */}
+            <div>
+              <h3
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--text-tertiary)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  marginBottom: "var(--sp-3)",
+                }}
+              >
+                Quick Statistics
+              </h3>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "var(--sp-3)",
+                }}
+              >
+                {QUICK_STAT_COLS.map(({ key, label, unit }) => (
+                  <StatCard
+                    key={key}
+                    label={label}
+                    value={stockQuery.data![key as keyof typeof stockQuery.data]}
+                    unit={unit}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Indicators */}
+            {metadata.length > 0 && (
+              <div>
+                <h3
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-tertiary)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                    marginBottom: "var(--sp-3)",
+                  }}
+                >
+                  Indicators
+                </h3>
+                <IndicatorSection
+                  stock={stockQuery.data}
+                  metadata={metadata}
+                />
+              </div>
+            )}
+
+            {/* Chart Placeholder */}
+            <div
+              className="card"
+              style={{
+                padding: "var(--sp-5)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 160,
+                borderStyle: "dashed",
+              }}
+            >
+              <BarChart3
+                size={28}
+                style={{ color: "var(--text-muted)", marginBottom: 8 }}
+              />
+              <p
+                style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--text-tertiary)",
+                  marginBottom: 2,
+                }}
+              >
+                Interactive Chart
+              </p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Price and volume charts — coming in Q3 2026
+              </p>
+            </div>
+
+            {/* Timeline */}
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-2)",
+                  marginBottom: "var(--sp-3)",
+                }}
+              >
+                <Clock size={14} style={{ color: "var(--text-tertiary)" }} />
+                <h3
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-tertiary)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Minute-by-Minute Timeline
+                </h3>
+                {timelineQuery.data && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginLeft: 4,
+                    }}
+                  >
+                    ({timelineQuery.data.length} data points)
+                  </span>
+                )}
+              </div>
+              {timelineQuery.isLoading ? (
+                <SkeletonTable rows={5} cols={5} />
+              ) : (
+                <TimelineTable timeline={timelineQuery.data || []} />
+              )}
+            </div>
+          </div>
         ) : null}
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -6,14 +6,15 @@ import { Sidebar } from "@/components/layout/Sidebar";
 
 const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "MarketPulse — Live Market Analytics",
   description:
-    "Real-time stock market analytics dashboard with live data, dynamic filtering, condition scanning, and minute-by-minute historical analysis.",
+    "Real-time Indian equity market analytics platform with live screening, dynamic columns, and institutional-grade data visualization.",
+  keywords: ["stock market", "NSE", "BSE", "live data", "screener", "analytics"],
 };
 
 export default function RootLayout({
@@ -22,12 +23,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+    <html lang="en" className={inter.variable}>
+      <body>
         <Providers>
-          <div className="flex min-h-screen">
+          <div className="app-layout">
             <Sidebar />
-            <main className="ml-[68px] flex-1">{children}</main>
+            <div style={{ flex: 1, marginLeft: "var(--sidebar-width)" }}>
+              {children}
+            </div>
           </div>
         </Providers>
       </body>

@@ -1,14 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useColumnStore } from "@/stores/columns";
-import { Columns3, X, RotateCcw, ChevronDown, ChevronRight, Check } from "lucide-react";
+import {
+  Columns3,
+  X,
+  RotateCcw,
+  ChevronDown,
+  ChevronRight,
+  Check,
+  Search,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+
+function MinusIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      width="10"
+      height="10"
+    >
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
 
 export function ColumnSelector() {
-  const { metadata, groups, visibleColumns, toggleColumn, resetToDefaults, selectGroup, deselectGroup } =
-    useColumnStore();
+  const {
+    metadata,
+    groups,
+    visibleColumns,
+    toggleColumn,
+    resetToDefaults,
+    selectGroup,
+    deselectGroup,
+  } = useColumnStore();
   const [isOpen, setIsOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(groups));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set(groups)
+  );
+  const [searchQuery, setSearchQuery] = useState("");
 
   const toggleGroup = (group: string) => {
     const next = new Set(expandedGroups);
@@ -24,162 +59,322 @@ export function ColumnSelector() {
 
   const isGroupPartiallySelected = (group: string) => {
     const groupCols = metadata.filter((m) => m.group === group);
-    const selected = groupCols.filter((m) => visibleColumns.includes(m.column));
+    const selected = groupCols.filter((m) =>
+      visibleColumns.includes(m.column)
+    );
     return selected.length > 0 && selected.length < groupCols.length;
   };
 
   if (!metadata.length) return null;
 
+  const filteredMetadata = searchQuery
+    ? metadata.filter(
+        (m) =>
+          m.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          m.column.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : metadata;
+
+  const filteredGroups = searchQuery
+    ? [...new Set(filteredMetadata.map((m) => m.group))]
+    : groups;
+
   return (
-    <div className="relative">
+    <>
+      {/* Trigger Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-        style={{
-          borderColor: "var(--border-secondary)",
-          color: "var(--text-secondary)",
-          backgroundColor: "var(--bg-secondary)",
-        }}
+        className="btn btn-secondary"
+        onClick={() => setIsOpen(true)}
       >
-        <Columns3 className="h-3.5 w-3.5" />
+        <Columns3 size={14} />
         Columns ({visibleColumns.length})
       </button>
 
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+      {/* Drawer */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Overlay */}
+            <motion.div
+              className="drawer-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              onClick={() => setIsOpen(false)}
+            />
 
-          {/* Panel */}
-          <div
-            className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-xl border shadow-lg"
-            style={{
-              backgroundColor: "var(--bg-elevated)",
-              borderColor: "var(--border-primary)",
-            }}
-          >
-            {/* Header */}
-            <div
-              className="flex items-center justify-between border-b px-4 py-3"
-              style={{ borderColor: "var(--border-primary)" }}
+            {/* Panel */}
+            <motion.div
+              className="drawer-panel"
+              initial={{ x: 320 }}
+              animate={{ x: 0 }}
+              exit={{ x: 320 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
             >
-              <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                Column Selector
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={resetToDefaults}
-                  className="rounded p-1 text-xs transition-colors hover:bg-[var(--bg-hover)]"
-                  style={{ color: "var(--text-tertiary)" }}
-                  title="Reset to defaults"
+              {/* Header */}
+              <div className="drawer-header">
+                <span
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                  }}
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="rounded p-1 transition-colors hover:bg-[var(--bg-hover)]"
-                  style={{ color: "var(--text-tertiary)" }}
+                  Columns
+                </span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                  <button
+                    className="btn btn-ghost btn-icon"
+                    onClick={resetToDefaults}
+                    title="Reset to defaults"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-icon"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Groups */}
-            <div className="max-h-80 overflow-y-auto p-2">
-              {groups.map((group) => {
-                const groupColumns = metadata.filter((m) => m.group === group);
-                if (groupColumns.length === 0) return null;
-                const isExpanded = expandedGroups.has(group);
-                const isFull = isGroupFullySelected(group);
-                const isPartial = isGroupPartiallySelected(group);
+              {/* Search */}
+              <div
+                style={{
+                  padding: "var(--sp-3) var(--sp-4)",
+                  borderBottom: "1px solid var(--border-primary)",
+                }}
+              >
+                <div style={{ position: "relative" }}>
+                  <Search
+                    size={14}
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--text-muted)",
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search columns..."
+                    className="input"
+                    style={{
+                      width: "100%",
+                      height: 32,
+                      fontSize: 12,
+                      paddingLeft: 32,
+                    }}
+                  />
+                </div>
+              </div>
 
-                return (
-                  <div key={group} className="mb-1">
-                    {/* Group header */}
-                    <button
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--bg-hover)]"
-                      style={{ color: "var(--text-secondary)" }}
-                      onClick={() => toggleGroup(group)}
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-3 w-3" />
-                      ) : (
-                        <ChevronRight className="h-3 w-3" />
-                      )}
-                      {group}
-                      <span className="ml-auto text-[10px]" style={{ color: "var(--text-muted)" }}>
-                        {groupColumns.filter((m) => visibleColumns.includes(m.column)).length}/
-                        {groupColumns.length}
-                      </span>
-                      {/* Select/deselect group */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isFull) deselectGroup(group);
-                          else selectGroup(group);
+              {/* Groups */}
+              <div className="drawer-body">
+                {filteredGroups.map((group) => {
+                  const groupColumns = filteredMetadata.filter(
+                    (m) => m.group === group
+                  );
+                  if (groupColumns.length === 0) return null;
+                  const isExpanded = expandedGroups.has(group);
+                  const isFull = isGroupFullySelected(group);
+                  const isPartial = isGroupPartiallySelected(group);
+
+                  return (
+                    <div key={group} style={{ marginBottom: 4 }}>
+                      {/* Group header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 8px",
+                          borderRadius: "var(--radius-sm)",
+                          cursor: "pointer",
+                          transition: "background var(--transition-fast)",
                         }}
-                        className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-                          isFull
-                            ? "border-[var(--color-accent)] bg-[var(--color-accent)]"
-                            : isPartial
-                            ? "border-[var(--color-accent)] bg-[var(--color-accent-bg)]"
-                            : "border-[var(--border-secondary)]"
-                        }`}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.backgroundColor =
+                            "var(--bg-hover)";
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.backgroundColor =
+                            "transparent";
+                        }}
+                        onClick={() => toggleGroup(group)}
                       >
-                        {isFull && <Check className="h-2.5 w-2.5 text-white" />}
-                        {isPartial && !isFull && <Minus className="h-2.5 w-2.5 text-[var(--color-accent)]" />}
-                      </button>
-                    </button>
-
-                    {/* Individual columns */}
-                    {isExpanded && (
-                      <div className="ml-5 space-y-0.5">
-                        {groupColumns.map((col) => {
-                          const isVisible = visibleColumns.includes(col.column);
-                          return (
-                            <button
-                              key={col.column}
-                              onClick={() => toggleColumn(col.column)}
-                              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-[var(--bg-hover)]"
-                              style={{ color: "var(--text-secondary)" }}
-                            >
-                              <div
-                                className={`flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors ${
-                                  isVisible
-                                    ? "border-[var(--color-accent)] bg-[var(--color-accent)]"
-                                    : "border-[var(--border-secondary)]"
-                                }`}
-                              >
-                                {isVisible && <Check className="h-2 w-2 text-white" />}
-                              </div>
-                              <span className="flex-1 text-left">{col.display_name}</span>
-                              {col.unit && (
-                                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                                  {col.unit}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
+                        {isExpanded ? (
+                          <ChevronDown
+                            size={12}
+                            style={{ color: "var(--text-muted)" }}
+                          />
+                        ) : (
+                          <ChevronRight
+                            size={12}
+                            style={{ color: "var(--text-muted)" }}
+                          />
+                        )}
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "var(--text-secondary)",
+                            flex: 1,
+                          }}
+                        >
+                          {group}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          {
+                            groupColumns.filter((m) =>
+                              visibleColumns.includes(m.column)
+                            ).length
+                          }
+                          /{groupColumns.length}
+                        </span>
+                        {/* Group toggle */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isFull) deselectGroup(group);
+                            else selectGroup(group);
+                          }}
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: "var(--radius-xs)",
+                            border: `1px solid ${
+                              isFull
+                                ? "var(--color-accent)"
+                                : isPartial
+                                ? "var(--color-accent)"
+                                : "var(--border-secondary)"
+                            }`,
+                            backgroundColor: isFull
+                              ? "var(--color-accent)"
+                              : isPartial
+                              ? "var(--color-accent-bg)"
+                              : "transparent",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                            padding: 0,
+                          }}
+                        >
+                          {isFull && (
+                            <Check size={10} color="#ffffff" />
+                          )}
+                          {isPartial && !isFull && (
+                            <MinusIcon />
+                          )}
+                        </button>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
-// Need Minus icon for partial select state
-function Minus({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
+                      {/* Individual columns */}
+                      {isExpanded && (
+                        <div style={{ marginLeft: 20, marginTop: 2 }}>
+                          {groupColumns.map((col) => {
+                            const isVisible = visibleColumns.includes(
+                              col.column
+                            );
+                            return (
+                              <div
+                                key={col.column}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  padding: "5px 8px",
+                                  borderRadius: "var(--radius-sm)",
+                                  cursor: "pointer",
+                                  transition:
+                                    "background var(--transition-fast)",
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.backgroundColor =
+                                    "var(--bg-hover)";
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.backgroundColor =
+                                    "transparent";
+                                }}
+                                onClick={() => toggleColumn(col.column)}
+                              >
+                                <div
+                                  style={{
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: "var(--radius-xs)",
+                                    border: `1px solid ${
+                                      isVisible
+                                        ? "var(--color-accent)"
+                                        : "var(--border-secondary)"
+                                    }`,
+                                    backgroundColor: isVisible
+                                      ? "var(--color-accent)"
+                                      : "transparent",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    flexShrink: 0,
+                                    transition:
+                                      "all var(--transition-fast)",
+                                  }}
+                                >
+                                  {isVisible && (
+                                    <Check size={9} color="#ffffff" />
+                                  )}
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text-secondary)",
+                                    flex: 1,
+                                  }}
+                                >
+                                  {col.display_name}
+                                </span>
+                                {col.unit && (
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      color: "var(--text-muted)",
+                                    }}
+                                  >
+                                    {col.unit}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
