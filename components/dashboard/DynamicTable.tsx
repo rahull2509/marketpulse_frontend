@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState, forwardRef, useImperativeHandle, CSSProperties } from "react";
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   type ColumnDef,
   type SortingState,
+  type Row,
   flexRender,
 } from "@tanstack/react-table";
 import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
@@ -22,6 +24,23 @@ import {
 import type { StockRecord } from "@/types/stock";
 import type { ColumnMetadata } from "@/types/metadata";
 import Link from "next/link";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 
 /* ── Cell Renderer ────────────────────────────────────────────── */
 
@@ -30,9 +49,7 @@ function renderCell(
   meta: ColumnMetadata | undefined
 ): React.ReactNode {
   if (value === null || value === undefined)
-    return (
-      <span style={{ color: "var(--text-muted)" }}>—</span>
-    );
+    return <span style={{ color: "var(--text-muted)" }}>—</span>;
 
   const unit = meta?.unit || "";
   const type = meta?.type || "string";
@@ -50,7 +67,7 @@ function renderCell(
     );
   }
 
-  if (column === "Net Change") {
+  if (column === "day_change" || column === "Net Change") {
     const num = Number(value);
     return (
       <span
@@ -62,68 +79,63 @@ function renderCell(
     );
   }
 
-  if (unit === "₹" && type === "number") {
-    return (
-      <span className="font-tabular" style={{ fontWeight: 500 }}>
-        {formatCurrency(value)}
-      </span>
-    );
-  }
-
-  if (
-    column === "Volume" ||
-    column === "Total Buy Quantity" ||
-    column === "Total Sell Quantity"
-  ) {
-    return <span className="font-tabular">{formatVolume(value)}</span>;
+  if (type === "number") {
+    const num = Number(value);
+    if (unit === "₹") {
+      return (
+        <span className="font-tabular font-medium">
+          {formatCurrency(num)}
+        </span>
+      );
+    }
+    if (column === "volume" || column === "Volume") {
+      return (
+        <span className="font-tabular text-muted">
+          {formatVolume(num)}
+        </span>
+      );
+    }
+    return <span className="font-tabular">{num}</span>;
   }
 
   if (column === "trading_symbol") {
     return (
-      <Link
-        href={`/stock/${encodeURIComponent(String(value))}`}
+      <span
+        className="font-mono text-sm"
         style={{
-          fontWeight: 600,
+          color: "var(--color-accent)",
+          fontWeight: 500,
+        }}
+      >
+        {String(value)}
+      </span>
+    );
+  }
+
+  if (column === "Instrument") {
+    return (
+      <Link
+        href={`/symbol/${encodeURIComponent(String(value))}`}
+        style={{
           color: "var(--text-primary)",
+          fontWeight: 600,
           textDecoration: "none",
-          transition: "color var(--transition-fast)",
         }}
-        onMouseOver={(e) => {
-          e.currentTarget.style.color = "var(--color-accent)";
-        }}
-        onMouseOut={(e) => {
-          e.currentTarget.style.color = "var(--text-primary)";
-        }}
+        className="hover-underline"
       >
         {String(value)}
       </Link>
     );
   }
 
-  if (type === "number") {
-    const num = Number(value);
-    if (!isNaN(num))
-      return <span className="font-tabular">{num.toFixed(2)}</span>;
-  }
-
-  return <span>{String(value)}</span>;
+  return <span style={{ fontWeight: 400 }}>{String(value)}</span>;
 }
 
-/* ── Sort Icon ────────────────────────────────────────────────── */
-
-function SortIcon({
-  isSorted,
-}: {
-  isSorted: false | "asc" | "desc";
-}) {
+function SortIcon({ isSorted }: { isSorted: false | "asc" | "desc" }) {
   if (isSorted === "asc")
-    return (
-      <ArrowUp size={12} style={{ color: "var(--color-accent)" }} />
-    );
+    return <ArrowUp size={12} style={{ color: "var(--color-accent)" }} />;
   if (isSorted === "desc")
-    return (
-      <ArrowDown size={12} style={{ color: "var(--color-accent)" }} />
-    );
+    return <ArrowDown size={12} style={{ color: "var(--color-accent)" }} />;
   return (
     <ArrowUpDown
       size={12}
@@ -132,183 +144,325 @@ function SortIcon({
   );
 }
 
+/* ── Memoized Table Row ───────────────────────────────────────── */
+// This prevents unnecessary re-renders when WebSocket ticks happen
+// since Zustand maps unchanged rows to the same object reference.
+const MemoizedTableRow = React.memo(
+  ({
+    row,
+    metaMap,
+  }: {
+    row: Row<StockRecord>;
+    metaMap: Map<string, ColumnMetadata>;
+  }) => {
+    return (
+      <tr>
+        {row.getVisibleCells().map((cell) => {
+          const isPinned = cell.column.getIsPinned();
+          const isLastLeftPinned = isPinned === "left" && cell.column.getIsLastColumn("left");
+
+          return (
+            <td
+              key={cell.id}
+              style={{
+                textAlign:
+                  metaMap.get(cell.column.id)?.type === "number" &&
+                  cell.column.id !== "Instrument"
+                    ? "right"
+                    : "left",
+                position: isPinned ? "sticky" : "relative",
+                left: isPinned === "left" ? `${cell.column.getStart("left")}px` : undefined,
+                zIndex: isPinned ? 5 : undefined,
+                backgroundColor: isPinned ? "inherit" : undefined,
+                boxShadow: isLastLeftPinned ? "4px 0 8px -4px rgba(0,0,0,0.1)" : undefined,
+              }}
+            >
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </td>
+          );
+        })}
+      </tr>
+    );
+  },
+  (prev, next) => prev.row.original === next.row.original
+);
+
+/* ── Draggable Header ─────────────────────────────────────────── */
+
+function DraggableHeader({
+  header,
+  metaMap,
+}: {
+  header: any;
+  metaMap: Map<string, ColumnMetadata>;
+}) {
+  const { attributes, isDragging, listeners, setNodeRef, transform, transition } =
+    useSortable({
+      id: header.column.id,
+    });
+
+  const isPinned = header.column.getIsPinned();
+  const isLastLeftPinned = isPinned === "left" && header.column.getIsLastColumn("left");
+
+  const style: CSSProperties = {
+    minWidth: header.column.getSize(),
+    textAlign:
+      metaMap.get(header.id)?.type === "number" && header.id !== "Instrument"
+        ? "right"
+        : "left",
+    position: isPinned ? "sticky" : "relative",
+    left: isPinned === "left" ? `${header.column.getStart("left")}px` : undefined,
+    zIndex: isDragging ? 20 : isPinned ? 15 : undefined,
+    backgroundColor: isPinned ? "var(--bg-secondary)" : undefined,
+    boxShadow: isLastLeftPinned
+      ? "4px 0 8px -4px rgba(0,0,0,0.1)"
+      : isDragging
+      ? "0 4px 12px rgba(0,0,0,0.15)"
+      : undefined,
+    opacity: isDragging ? 0.8 : 1,
+    transform: CSS.Translate.toString(transform),
+    transition,
+    cursor: "grab",
+  };
+
+  return (
+    <th ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {header.isPlaceholder
+        ? null
+        : flexRender(header.column.columnDef.header, header.getContext())}
+    </th>
+  );
+}
+
 /* ── Main Table ───────────────────────────────────────────────── */
 
 interface DynamicTableProps {
   data: StockRecord[];
   globalFilter: string;
+  pagination?: {
+    pageIndex: number;
+    pageSize: number;
+  };
 }
 
-export function DynamicTable({ data, globalFilter }: DynamicTableProps) {
-  const { metadata } = useColumnStore();
-  const { visibleColumns } = useColumnStore();
-  const [sorting, setSorting] = useState<SortingState>([]);
+export interface DynamicTableRef {
+  downloadCSV: (filename: string) => void;
+}
 
-  const metaMap = useMemo(() => {
-    const map = new Map<string, ColumnMetadata>();
-    metadata.forEach((m) => map.set(m.column, m));
-    return map;
-  }, [metadata]);
+export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
+  ({ data, globalFilter, pagination }, ref) => {
+    const {
+      metadata,
+      visibleColumns,
+      columnOrder,
+      pinnedColumns,
+      setColumnOrder,
+    } = useColumnStore();
+    const [sorting, setSorting] = useState<SortingState>([]);
 
-  const columns = useMemo<ColumnDef<StockRecord>[]>(() => {
-    return visibleColumns
-      .map((colName) => {
-        const meta = metaMap.get(colName);
-        const displayName = meta?.display_name || colName;
-        const type = meta?.type || "string";
+    const metaMap = useMemo(() => {
+      const map = new Map<string, ColumnMetadata>();
+      metadata.forEach((m) => map.set(m.column, m));
+      return map;
+    }, [metadata]);
 
-        const col: ColumnDef<StockRecord> = {
-          id: colName,
-          accessorFn: (row) => row[colName],
-          header: ({ column: tableCol }) => (
-            <button
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                font: "inherit",
-                color: "inherit",
-                padding: 0,
-                fontWeight: 600,
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-                whiteSpace: "nowrap",
-              }}
-              onClick={() => tableCol.toggleSorting()}
-            >
-              {displayName}
-              <SortIcon isSorted={tableCol.getIsSorted()} />
-            </button>
+    const columns = useMemo<ColumnDef<StockRecord>[]>(() => {
+      return visibleColumns
+        .map((colName) => {
+          const meta = metaMap.get(colName);
+          const displayName = meta?.display_name || colName;
+          const type = meta?.type || "string";
+
+          const col: ColumnDef<StockRecord> = {
+            id: colName,
+            accessorFn: (row) => row[colName],
+            size:
+              colName === "Instrument"
+                ? 200
+                : colName === "trading_symbol"
+                ? 120
+                : 100,
+            header: ({ column: tableCol }) => {
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      background: "none",
+                      border: "none",
+                      cursor: "inherit",
+                      font: "inherit",
+                      color: "inherit",
+                      padding: 0,
+                      fontWeight: 600,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                      whiteSpace: "nowrap",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      tableCol.toggleSorting();
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()} // Let dnd-kit handle drag
+                  >
+                    {displayName}
+                    <SortIcon isSorted={tableCol.getIsSorted()} />
+                  </button>
+                </div>
+              );
+            },
+            cell: ({ getValue }) => renderCell(getValue(), meta),
+            sortingFn: type === "number" ? "basic" : "alphanumeric",
+            enableSorting: meta?.sortable !== false,
+          };
+
+          return col;
+        })
+        .filter(Boolean);
+    }, [visibleColumns, metaMap]);
+
+    const table = useReactTable({
+      data,
+      columns,
+      state: {
+        sorting,
+        globalFilter,
+        columnOrder,
+        columnPinning: pinnedColumns,
+        ...(pagination ? { pagination } : {}),
+      },
+      onSortingChange: setSorting,
+      onColumnOrderChange: (updater) => {
+        if (typeof updater === "function") {
+          setColumnOrder(updater(columnOrder));
+        } else {
+          setColumnOrder(updater);
+        }
+      },
+      getCoreRowModel: getCoreRowModel(),
+      getSortedRowModel: getSortedRowModel(),
+      getFilteredRowModel: getFilteredRowModel(),
+      getPaginationRowModel: pagination ? getPaginationRowModel() : undefined,
+      globalFilterFn: (row, _columnId, filterValue) => {
+        const search = String(filterValue).toLowerCase();
+        const instrument = String(row.original.Instrument || "").toLowerCase();
+        const symbol = String(row.original.trading_symbol || "").toLowerCase();
+        const company = String(row.original.company_name || "").toLowerCase();
+        return (
+          instrument.includes(search) ||
+          symbol.includes(search) ||
+          company.includes(search)
+        );
+      },
+    });
+
+    useImperativeHandle(ref, () => ({
+      downloadCSV: (filename: string) => {
+        const rows = table.getRowModel().rows;
+        const cols = table.getVisibleLeafColumns();
+
+        const headers = cols.map((c) => {
+          const meta = metaMap.get(c.id);
+          return meta?.display_name || c.id;
+        });
+
+        const csvContent = [
+          headers.join(","),
+          ...rows.map((row) =>
+            cols
+              .map((c) => {
+                let val = row.getValue(c.id);
+                if (val === null || val === undefined) return "";
+                val = String(val).replace(/"/g, '""');
+                return `"${val}"`;
+              })
+              .join(",")
           ),
-          cell: ({ getValue }) => renderCell(getValue(), meta),
-          sortingFn: type === "number" ? "basic" : "alphanumeric",
-          enableSorting: meta?.sortable !== false,
-        };
+        ].join("\n");
 
-        return col;
-      })
-      .filter(Boolean);
-  }, [visibleColumns, metaMap]);
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      },
+    }));
 
-  const table = useReactTable({
-    data,
-    columns,
-    state: { sorting, globalFilter },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    globalFilterFn: (row, _columnId, filterValue) => {
-      const search = String(filterValue).toLowerCase();
-      const instrument = String(
-        row.original.Instrument || ""
-      ).toLowerCase();
-      const symbol = String(
-        row.original.trading_symbol || ""
-      ).toLowerCase();
-      const company = String(
-        row.original.company_name || ""
-      ).toLowerCase();
-      return (
-        instrument.includes(search) ||
-        symbol.includes(search) ||
-        company.includes(search)
-      );
-    },
-  });
+    const sensors = useSensors(
+      useSensor(PointerSensor, {
+        activationConstraint: {
+          distance: 5,
+        },
+      }),
+      useSensor(KeyboardSensor)
+    );
 
-  if (!columns.length) {
+    const handleDragEnd = (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (active && over && active.id !== over.id) {
+        const isDraggedPinned = pinnedColumns.left.includes(active.id as string);
+        const isTargetPinned = pinnedColumns.left.includes(over.id as string);
+        if (isDraggedPinned !== isTargetPinned) return;
+
+        const oldIndex = columnOrder.indexOf(active.id as string);
+        const newIndex = columnOrder.indexOf(over.id as string);
+        setColumnOrder(arrayMove(columnOrder, oldIndex, newIndex));
+      }
+    };
+
     return (
-      <div
-        className="card"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "64px 24px",
-          color: "var(--text-tertiary)",
-          fontSize: 13,
-        }}
-      >
-        No columns selected. Use the column selector to choose visible columns.
+      <div className="table-container">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          modifiers={[restrictToHorizontalAxis]}
+        >
+          <table className="market-table" style={{ width: table.getTotalSize() }}>
+            <thead>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  <SortableContext
+                    items={columnOrder}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    {headerGroup.headers.map((header) => (
+                      <DraggableHeader
+                        key={header.id}
+                        header={header}
+                        metaMap={metaMap}
+                      />
+                    ))}
+                  </SortableContext>
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    style={{ textAlign: "center", padding: "var(--sp-6)" }}
+                  >
+                    No data available
+                  </td>
+                </tr>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <MemoizedTableRow
+                    key={row.id}
+                    row={row}
+                    metaMap={metaMap}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </DndContext>
       </div>
     );
-  }
-
-  return (
-    <div className="table-container">
-      <table className="market-table">
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header, idx) => (
-                <th
-                  key={header.id}
-                  className={idx === 0 ? "sticky-col" : ""}
-                  style={{
-                    minWidth: idx === 0 ? 120 : 90,
-                    textAlign:
-                      metaMap.get(header.id)?.type === "number" && idx !== 0
-                        ? "right"
-                        : "left",
-                  }}
-                >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.length === 0 ? (
-            <tr>
-              <td
-                colSpan={columns.length}
-                style={{
-                  height: 200,
-                  textAlign: "center",
-                  color: "var(--text-tertiary)",
-                  fontSize: 13,
-                }}
-              >
-                No stocks match your search or filters.
-              </td>
-            </tr>
-          ) : (
-            table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
-                {row.getVisibleCells().map((cell, idx) => (
-                  <td
-                    key={cell.id}
-                    className={idx === 0 ? "sticky-col" : ""}
-                    style={{
-                      textAlign:
-                        metaMap.get(cell.column.id)?.type === "number" &&
-                        idx !== 0
-                          ? "right"
-                          : "left",
-                    }}
-                  >
-                    {flexRender(
-                      cell.column.columnDef.cell,
-                      cell.getContext()
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+})

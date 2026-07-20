@@ -68,25 +68,6 @@ export function Pagination({
           </strong>{" "}
           stocks
         </span>
-
-        {/* Page size selector */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: "var(--text-tertiary)" }}>Rows</span>
-          <select
-            className="select"
-            value={pageSize}
-            onChange={(e) => {
-              onPageSizeChange(Number(e.target.value));
-              onPageChange(1);
-            }}
-          >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {/* Right — Page Navigation */}

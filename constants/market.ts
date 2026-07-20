@@ -12,7 +12,7 @@ export const DEFAULT_PAGE_SIZE = 50;
 export const REFRESH_INTERVALS = {
   MARKET_STATUS: 30_000,   // 30 seconds
   INDICES: 60_000,         // 1 minute
-  DASHBOARD: 60_000,       // 1 minute (fallback if no WebSocket)
+  DASHBOARD: 15_000,       // 15 seconds (frequent polling alongside WebSocket)
 } as const;
 
 export const WS_RECONNECT = {

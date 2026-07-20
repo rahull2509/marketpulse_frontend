@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { TopNavigation } from "@/components/layout/TopNavigation";
-import { DynamicTable } from "@/components/dashboard/DynamicTable";
+import { DynamicTable, type DynamicTableRef } from "@/components/dashboard/DynamicTable";
 import { Pagination } from "@/components/common/Pagination";
+import { PageSizeSelector } from "@/components/dashboard/PageSizeSelector";
+import { ColumnSelector } from "@/components/dashboard/ColumnSelector";
 import {
   EmptyState,
   SkeletonTable,
@@ -32,6 +34,7 @@ import {
   BarChart3,
   Zap,
   Activity,
+  Download,
 } from "lucide-react";
 
 /* ── Operators ───────────────────────────────────────────────── */
@@ -75,6 +78,7 @@ function ConditionRow({
         display: "flex",
         alignItems: "center",
         gap: "var(--sp-2)",
+        flexWrap: "wrap", // Let condition fields wrap instead of overflowing horizontally
       }}
     >
       {/* Logical operator */}
@@ -165,7 +169,9 @@ function PresetCard({
   else if (nameLower.includes("institution")) Icon = PRESET_ICONS.institutional;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(preset)}
       className="card"
       style={{
@@ -178,6 +184,12 @@ function PresetCard({
         transition: "all var(--transition-fast)",
         background: "none",
         fontFamily: "var(--font-sans)",
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(preset);
+        }
       }}
       onMouseOver={(e) => {
         e.currentTarget.style.borderColor = "var(--color-accent)";
@@ -227,7 +239,7 @@ function PresetCard({
         {preset.conditions.length} condition
         {preset.conditions.length !== 1 ? "s" : ""}
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -355,15 +367,21 @@ const DEFAULT_CONDITION: ScannerCondition = {
 };
 
 export default function ScannerPage() {
-  const { metadata } = useColumnStore();
+  const { metadata, pageSize } = useColumnStore();
   const [conditions, setConditions] = useState<ScannerCondition[]>([
     { ...DEFAULT_CONDITION },
   ]);
   const [results, setResults] = useState<StockRecord[]>([]);
   const [hasRun, setHasRun] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
   const [totalScanned, setTotalScanned] = useState(0);
+  const tableRef = useRef<DynamicTableRef>(null);
+
+  const handleDownloadCSV = () => {
+    tableRef.current?.downloadCSV(
+      `marketpulse_scan_${new Date().toISOString().split("T")[0]}.csv`
+    );
+  };
 
   const filterableColumns = metadata
     .filter((m) => m.filterable)
@@ -446,11 +464,8 @@ export default function ScannerPage() {
     (c) => c.column && c.value !== ""
   );
 
-  // Paginate results client-side
-  const paginatedResults = results.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  // Paginate results via TanStack natively by passing the config to DynamicTable
+  // No need for paginatedResults slice anymore.
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -520,7 +535,7 @@ export default function ScannerPage() {
                   Build Conditions
                 </h3>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
                 <button
                   className="btn btn-ghost"
                   onClick={resetConditions}
@@ -567,7 +582,23 @@ export default function ScannerPage() {
 
           {/* Results */}
           {hasRun && results.length > 0 && (
-            <ScanSummary results={results} totalScanned={7000} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <ScanSummary results={results} totalScanned={7000} />
+              
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexShrink: 0 }}>
+                <ColumnSelector />
+                <button
+                  className="btn btn-secondary"
+                  style={{ height: 32 }}
+                  onClick={handleDownloadCSV}
+                  title="Download current view as CSV"
+                >
+                  <Download size={14} />
+                  <span>CSV</span>
+                </button>
+                <PageSizeSelector />
+              </div>
+            </div>
           )}
 
           {scanMutation.isPending ? (
@@ -580,16 +611,21 @@ export default function ScannerPage() {
             />
           ) : results.length > 0 ? (
             <>
-              <DynamicTable data={paginatedResults} globalFilter="" />
+              <DynamicTable
+                ref={tableRef}
+                data={results}
+                globalFilter=""
+                pagination={{
+                  pageIndex: currentPage - 1,
+                  pageSize: pageSize,
+                }}
+              />
               <Pagination
                 currentPage={currentPage}
                 totalItems={results.length}
                 pageSize={pageSize}
                 onPageChange={setCurrentPage}
-                onPageSizeChange={(size) => {
-                  setPageSize(size);
-                  setCurrentPage(1);
-                }}
+                onPageSizeChange={() => {}}
               />
             </>
           ) : hasRun ? (

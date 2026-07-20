@@ -477,7 +477,7 @@ export default function SettingsPage() {
                   <div style={{ display: "flex", gap: "var(--sp-5)" }}>
                     {[
                       { label: "Platform", value: "FastAPI + Next.js" },
-                      { label: "Data Source", value: "Zerodha Kite API" },
+                      { label: "Data Source", value: "Upstox API" },
                       { label: "Storage", value: "AWS S3" },
                       { label: "Version", value: "1.0.0" },
                     ].map((item) => (

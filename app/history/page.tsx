@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { TopNavigation } from "@/components/layout/TopNavigation";
-import { DynamicTable } from "@/components/dashboard/DynamicTable";
+import { DynamicTable, type DynamicTableRef } from "@/components/dashboard/DynamicTable";
 import { Pagination } from "@/components/common/Pagination";
+import { PageSizeSelector } from "@/components/dashboard/PageSizeSelector";
+import { ColumnSelector } from "@/components/dashboard/ColumnSelector";
+import { useColumnStore } from "@/stores/columns";
 import {
   EmptyState,
   ErrorState,
@@ -65,8 +68,9 @@ export default function HistoryPage() {
     startTime: "",
     endTime: "",
   });
+  const { pageSize } = useColumnStore();
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const tableRef = useRef<DynamicTableRef>(null);
 
   // Available dates
   const datesQuery = useQuery({
@@ -120,10 +124,12 @@ export default function HistoryPage() {
   };
 
   const allData: StockRecord[] = historyQuery.data || [];
-  const paginatedData = allData.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+
+  const handleDownloadCSV = () => {
+    tableRef.current?.downloadCSV(
+      `marketpulse_history_${appliedFilters.date}.csv`
+    );
+  };
 
   const hasActiveFilters =
     searchSymbol || startTime || endTime || selectedDate !== "today";
@@ -150,11 +156,21 @@ export default function HistoryPage() {
             <div
               style={{
                 display: "flex",
-                flexWrap: "wrap",
+                flexWrap: "nowrap", // change from wrap to nowrap to prevent vertical stacking and keep right-aligned elements visible
                 alignItems: "flex-end",
                 gap: "var(--sp-4)",
+                overflow: "hidden", // fix horizontal overflow
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: "var(--sp-4)",
+                  overflowX: "auto", // allow scrolling within filters if too narrow
+                  paddingBottom: 8,
+                }}
+              >
               {/* Date */}
               <LabeledInput label="Trading Date" icon={Calendar}>
                 <select
@@ -219,6 +235,7 @@ export default function HistoryPage() {
                 </div>
               </LabeledInput>
 
+              </div>
               {/* Actions */}
               <div
                 style={{
@@ -226,7 +243,8 @@ export default function HistoryPage() {
                   alignItems: "center",
                   gap: "var(--sp-2)",
                   marginLeft: "auto",
-                  paddingTop: 18,
+                  paddingBottom: 8,
+                  flexShrink: 0,
                 }}
               >
                 <button
@@ -244,15 +262,6 @@ export default function HistoryPage() {
                   <Filter size={13} />
                   Apply
                 </button>
-                <button
-                  className="btn btn-ghost"
-                  disabled
-                  title="Coming Soon"
-                  style={{ opacity: 0.4 }}
-                >
-                  <Download size={13} />
-                  Export
-                </button>
               </div>
             </div>
           </div>
@@ -262,32 +271,75 @@ export default function HistoryPage() {
             <div
               style={{
                 display: "flex",
+                justifyContent: "space-between",
                 alignItems: "center",
-                gap: "var(--sp-3)",
               }}
             >
-              <span
-                className="font-tabular"
-                style={{ fontSize: 12, color: "var(--text-tertiary)" }}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--sp-3)",
+                }}
               >
-                {allData.length.toLocaleString("en-IN")} records
-              </span>
-              {appliedFilters.symbol && (
-                <span className="badge badge-info">
-                  {appliedFilters.symbol}
+                <span
+                  className="font-tabular"
+                  style={{ fontSize: 12, color: "var(--text-tertiary)" }}
+                >
+                  {allData.length.toLocaleString("en-IN")} records
                 </span>
-              )}
-              {(appliedFilters.startTime || appliedFilters.endTime) && (
-                <span className="badge badge-neutral">
-                  {appliedFilters.startTime || "09:15"} — {appliedFilters.endTime || "15:30"}
-                </span>
-              )}
+                {appliedFilters.symbol && (
+                  <span className="badge badge-info">
+                    {appliedFilters.symbol}
+                  </span>
+                )}
+                {(appliedFilters.startTime || appliedFilters.endTime) && (
+                  <span className="badge badge-neutral">
+                    {appliedFilters.startTime || "09:15"} — {appliedFilters.endTime || "15:30"}
+                  </span>
+                )}
+              </div>
+              
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexShrink: 0 }}>
+                <ColumnSelector />
+                <button
+                  className="btn btn-secondary"
+                  style={{ height: 32 }}
+                  onClick={handleDownloadCSV}
+                  title="Download current view as CSV"
+                >
+                  <Download size={14} />
+                  <span>CSV</span>
+                </button>
+                <PageSizeSelector />
+              </div>
             </div>
           )}
 
           {/* Table */}
           {historyQuery.isLoading ? (
-            <SkeletonTable />
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)" }}>
+              <div
+                className="card"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "64px 24px",
+                  textAlign: "center",
+                }}
+              >
+                <div className="spinner" style={{ marginBottom: "var(--sp-4)" }}></div>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
+                  Downloading Historical Data...
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                  Fetching data from cloud storage. This may take a few moments.
+                </p>
+              </div>
+              <SkeletonTable />
+            </div>
           ) : historyQuery.error ? (
             <ErrorState
               title="Failed to load historical data"
@@ -296,16 +348,21 @@ export default function HistoryPage() {
             />
           ) : allData.length > 0 ? (
             <>
-              <DynamicTable data={paginatedData} globalFilter="" />
+              <DynamicTable
+                ref={tableRef}
+                data={allData}
+                globalFilter=""
+                pagination={{
+                  pageIndex: currentPage - 1,
+                  pageSize: pageSize,
+                }}
+              />
               <Pagination
                 currentPage={currentPage}
                 totalItems={allData.length}
                 pageSize={pageSize}
                 onPageChange={setCurrentPage}
-                onPageSizeChange={(size) => {
-                  setPageSize(size);
-                  setCurrentPage(1);
-                }}
+                onPageSizeChange={() => {}}
               />
             </>
           ) : historyQuery.isFetched ? (

@@ -75,22 +75,20 @@
   --sp-8: 32px;
   --sp-10: 40px;
   --sp-12: 48px;
-
-  /* ── Border Radius ──────────────────────────────────────────── */
-  --radius-xs: 3px;
+  
+  /* Border Radius */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-full: 9999px;
-
   /* ── Transitions ────────────────────────────────────────────── */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ── Layout ─────────────────────────────────────────────────── */
-  --sidebar-width: 72px;
-  --topnav-height: 56px;
+  --sidebar-width: 64px;
+  --topnav-height: 48px;
 
   color-scheme: light;
 }
@@ -106,7 +104,6 @@
 }
 
 html {
-  scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -178,6 +175,7 @@ body {
   display: flex;
   align-items: center;
   padding: 0 var(--sp-6);
+  overflow: hidden; /* Prevent horizontal expansion */
 }
 
 .app-content {
@@ -185,6 +183,9 @@ body {
   margin-top: var(--topnav-height);
   flex: 1;
   min-height: calc(100vh - var(--topnav-height));
+  width: calc(100vw - var(--sidebar-width));
+  max-width: calc(100vw - var(--sidebar-width));
+  overflow-x: hidden;
 }
 
 /* ═══════════════════════════════════════════════════════════════
