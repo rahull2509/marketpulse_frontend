@@ -44,10 +44,13 @@ import { CSS } from "@dnd-kit/utilities";
 
 /* ── Cell Renderer ────────────────────────────────────────────── */
 
+let cellRendererCount = 0;
+
 function renderCell(
   value: unknown,
   meta: ColumnMetadata | undefined
 ): React.ReactNode {
+  cellRendererCount++;
   if (value === null || value === undefined)
     return <span style={{ color: "var(--text-muted)" }}>—</span>;
 
@@ -115,7 +118,7 @@ function renderCell(
   if (column === "Instrument") {
     return (
       <Link
-        href={`/symbol/${encodeURIComponent(String(value))}`}
+        href={`/stock/${encodeURIComponent(String(value))}`}
         style={{
           color: "var(--text-primary)",
           fontWeight: 600,
@@ -145,15 +148,19 @@ function SortIcon({ isSorted }: { isSorted: false | "asc" | "desc" }) {
 }
 
 /* ── Memoized Table Row ───────────────────────────────────────── */
-// This prevents unnecessary re-renders when WebSocket ticks happen
-// since Zustand maps unchanged rows to the same object reference.
+// Prevents unnecessary re-renders for WebSocket delta ticks (unchanged rows
+// keep the same object reference in Zustand). Also re-renders when the column
+// configuration changes (toggle, reorder, pin) because TanStack recreates the
+// Row object and its visible cells array in those cases.
 const MemoizedTableRow = React.memo(
   ({
     row,
     metaMap,
+    columnOrder,
   }: {
     row: Row<StockRecord>;
     metaMap: Map<string, ColumnMetadata>;
+    columnOrder: string[];
   }) => {
     return (
       <tr>
@@ -167,7 +174,7 @@ const MemoizedTableRow = React.memo(
               style={{
                 textAlign:
                   metaMap.get(cell.column.id)?.type === "number" &&
-                  cell.column.id !== "Instrument"
+                    cell.column.id !== "Instrument"
                     ? "right"
                     : "left",
                 position: isPinned ? "sticky" : "relative",
@@ -184,7 +191,20 @@ const MemoizedTableRow = React.memo(
       </tr>
     );
   },
-  (prev, next) => prev.row.original === next.row.original
+  (prev, next) => {
+    if (prev.columnOrder !== next.columnOrder) return false;
+    // Re-render if the underlying data changed (WebSocket delta)
+    if (prev.row.original !== next.row.original) return false;
+    // Re-render if visible columns changed (toggle, reorder, pin)
+    const prevCells = prev.row.getVisibleCells();
+    const nextCells = next.row.getVisibleCells();
+    if (prevCells.length !== nextCells.length) return false;
+    // Check column identity — if column IDs differ, columns were reordered
+    for (let i = 0; i < prevCells.length; i++) {
+      if (prevCells[i].column.id !== nextCells[i].column.id) return false;
+    }
+    return true;
+  }
 );
 
 /* ── Draggable Header ─────────────────────────────────────────── */
@@ -217,8 +237,8 @@ function DraggableHeader({
     boxShadow: isLastLeftPinned
       ? "4px 0 8px -4px rgba(0,0,0,0.1)"
       : isDragging
-      ? "0 4px 12px rgba(0,0,0,0.15)"
-      : undefined,
+        ? "0 4px 12px rgba(0,0,0,0.15)"
+        : undefined,
     opacity: isDragging ? 0.8 : 1,
     transform: CSS.Translate.toString(transform),
     transition,
@@ -243,6 +263,16 @@ interface DynamicTableProps {
     pageIndex: number;
     pageSize: number;
   };
+  columnsOverride?: string[];
+  metadataOverride?: ColumnMetadata[];
+  columnOrderOverride?: string[];
+  pinnedColumnsOverride?: { left: string[]; right: string[] };
+  onColumnOrderChange?: (order: string[]) => void;
+  storeHook?: any; // avoid type issue if useColumnStore isn't perfectly matched
+  sorting?: SortingState;
+  onSortingChange?: React.Dispatch<React.SetStateAction<SortingState>> | ((updater: import("@tanstack/react-table").Updater<SortingState>) => void);
+  manualSorting?: boolean;
+  isFetching?: boolean;
 }
 
 export interface DynamicTableRef {
@@ -250,21 +280,27 @@ export interface DynamicTableRef {
 }
 
 export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
-  ({ data, globalFilter, pagination }, ref) => {
-    const {
-      metadata,
-      visibleColumns,
-      columnOrder,
-      pinnedColumns,
-      setColumnOrder,
-    } = useColumnStore();
-    const [sorting, setSorting] = useState<SortingState>([]);
+  ({ data, globalFilter, pagination, columnsOverride, metadataOverride, columnOrderOverride, pinnedColumnsOverride, onColumnOrderChange, storeHook, sorting: controlledSorting, onSortingChange: controlledOnSortingChange, manualSorting, isFetching }, ref) => {
+    const useStore = storeHook || useColumnStore;
+    const store = useStore();
+
+    const metadata: ColumnMetadata[] = metadataOverride || store.metadata;
+    const visibleColumns: string[] = columnsOverride || store.visibleColumns;
+    const columnOrder: string[] = columnOrderOverride || store.columnOrder;
+    const pinnedColumns: { left: string[]; right: string[] } = pinnedColumnsOverride || store.pinnedColumns;
+    const setColumnOrder: (order: string[]) => void = onColumnOrderChange || store.setColumnOrder;
+    const [internalSorting, setInternalSorting] = useState<SortingState>([]);
+    const sorting = controlledSorting !== undefined ? controlledSorting : internalSorting;
+    const setSorting = controlledOnSortingChange !== undefined ? controlledOnSortingChange : setInternalSorting;
 
     const metaMap = useMemo(() => {
       const map = new Map<string, ColumnMetadata>();
       metadata.forEach((m) => map.set(m.column, m));
       return map;
     }, [metadata]);
+
+    console.log("DEBUG [Table]: Rows received from API:", data.length);
+    console.log("DEBUG [Table]: Visible columns:", visibleColumns);
 
     const columns = useMemo<ColumnDef<StockRecord>[]>(() => {
       return visibleColumns
@@ -280,8 +316,8 @@ export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
               colName === "Instrument"
                 ? 200
                 : colName === "trading_symbol"
-                ? 120
-                : 100,
+                  ? 120
+                  : 100,
             header: ({ column: tableCol }) => {
               return (
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -310,6 +346,9 @@ export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
                   >
                     {displayName}
                     <SortIcon isSorted={tableCol.getIsSorted()} />
+                    {isFetching && tableCol.getIsSorted() && (
+                      <span className="spinner" style={{ width: 10, height: 10, borderWidth: 2, marginLeft: 2, borderColor: 'var(--text-tertiary)', borderTopColor: 'var(--color-accent)' }} />
+                    )}
                   </button>
                 </div>
               );
@@ -323,6 +362,9 @@ export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
         })
         .filter(Boolean);
     }, [visibleColumns, metaMap]);
+
+    console.log("DEBUG [Table]: Column IDs:", columns.map(c => c.id));
+    console.log("DEBUG [Table]: Accessor keys (IDs):", columns.map(c => c.id));
 
     const table = useReactTable({
       data,
@@ -342,6 +384,7 @@ export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
           setColumnOrder(updater);
         }
       },
+      manualSorting: manualSorting,
       getCoreRowModel: getCoreRowModel(),
       getSortedRowModel: getSortedRowModel(),
       getFilteredRowModel: getFilteredRowModel(),
@@ -358,6 +401,9 @@ export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
         );
       },
     });
+
+    console.log("DEBUG [Table]: Row model length:", table.getRowModel().rows.length);
+    let renderedRowCount = 0;
 
     useImperativeHandle(ref, () => ({
       downloadCSV: (filename: string) => {
@@ -452,17 +498,21 @@ export const DynamicTable = forwardRef<DynamicTableRef, DynamicTableProps>(
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
-                  <MemoizedTableRow
-                    key={row.id}
-                    row={row}
-                    metaMap={metaMap}
-                  />
-                ))
+                table.getRowModel().rows.map((row) => {
+                  renderedRowCount++;
+                  return (
+                    <MemoizedTableRow
+                      key={row.id}
+                      row={row}
+                      metaMap={metaMap}
+                      columnOrder={columnOrder}
+                    />
+                  );
+                })
               )}
             </tbody>
           </table>
         </DndContext>
       </div>
     );
-})
+  })

@@ -28,7 +28,7 @@ export default function RootLayout({
         <Providers>
           <div className="app-layout">
             <Sidebar />
-            <div style={{ flex: 1, marginLeft: "var(--sidebar-width)" }}>
+            <div style={{ flex: 1 }}>
               {children}
             </div>
           </div>

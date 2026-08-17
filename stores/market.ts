@@ -2,7 +2,7 @@
  * Market Store — Live market data state management.
  *
  * Central state for the dashboard: stocks array, snapshot metadata,
- * indices, and market status. Supports both initial REST load
+ * and market status. Supports both initial REST load
  * and incremental WebSocket delta updates.
  */
 
@@ -12,10 +12,9 @@ import type { StockRecord, IndexData, MarketStatusData, CacheInfo } from "@/type
 interface MarketState {
   // Data
   stocks: StockRecord[];
-  indices: IndexData[];
   marketStatus: MarketStatusData | null;
   cacheInfo: CacheInfo | null;
-  snapshotId: number;
+  version: number;
 
   // UI State
   isLoading: boolean;
@@ -25,7 +24,6 @@ interface MarketState {
   // Actions
   setStocks: (stocks: StockRecord[]) => void;
   applyDelta: (changedRows: StockRecord[]) => void;
-  setIndices: (indices: IndexData[]) => void;
   setMarketStatus: (status: MarketStatusData) => void;
   setCacheInfo: (info: CacheInfo) => void;
   setLoading: (loading: boolean) => void;
@@ -34,24 +32,24 @@ interface MarketState {
 
 export const useMarketStore = create<MarketState>((set, get) => ({
   stocks: [],
-  indices: [],
   marketStatus: null,
   cacheInfo: null,
-  snapshotId: 0,
+  version: 0,
   isLoading: true,
   error: null,
   lastUpdated: null,
 
   setStocks: (stocks) =>
-    set({
+    set((state) => ({
       stocks,
+      version: state.version + 1,
       isLoading: false,
       error: null,
       lastUpdated: new Date(),
-    }),
+    })),
 
   applyDelta: (changedRows) => {
-    const { stocks, snapshotId } = get();
+    const { stocks, version } = get();
     if (!changedRows.length) return;
 
     // Build a map for O(1) lookups
@@ -70,12 +68,11 @@ export const useMarketStore = create<MarketState>((set, get) => ({
 
     set({
       stocks: [...updated, ...newStocks],
-      snapshotId: snapshotId + 1,
+      version: version + 1,
       lastUpdated: new Date(),
     });
   },
 
-  setIndices: (indices) => set({ indices }),
   setMarketStatus: (status) => set({ marketStatus: status }),
   setCacheInfo: (info) => set({ cacheInfo: info }),
   setLoading: (loading) => set({ isLoading: loading }),

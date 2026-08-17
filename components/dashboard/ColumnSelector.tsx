@@ -29,21 +29,54 @@ function MinusIcon({ className }: { className?: string }) {
   );
 }
 
-export function ColumnSelector() {
-  const {
-    metadata,
-    groups,
-    visibleColumns,
-    toggleColumn,
-    resetToDefaults,
-    selectGroup,
-    deselectGroup,
-  } = useColumnStore();
+import type { ColumnMetadata } from "@/types/metadata";
+
+export function ColumnSelector({ 
+  availableColumns,
+  metadataOverride,
+  visibleColumnsOverride,
+  groupsOverride,
+  onColumnToggle,
+  onGroupToggle,
+  onReset,
+  storeHook
+}: { 
+  availableColumns?: string[];
+  metadataOverride?: ColumnMetadata[];
+  visibleColumnsOverride?: string[];
+  groupsOverride?: string[];
+  onColumnToggle?: (col: string) => void;
+  onGroupToggle?: (group: string, isFull: boolean) => void;
+  onReset?: () => void;
+  storeHook?: typeof useColumnStore;
+}) {
+  const useStore = storeHook || useColumnStore;
+  const store = useStore();
+  const metadata = metadataOverride || store.metadata;
+  const groups = groupsOverride || store.groups;
+  const visibleColumns = visibleColumnsOverride || store.visibleColumns;
+  const toggleColumn = onColumnToggle || store.toggleColumn;
+  const selectGroup = (group: string) => onGroupToggle ? onGroupToggle(group, false) : store.selectGroup(group);
+  const deselectGroup = (group: string) => onGroupToggle ? onGroupToggle(group, true) : store.deselectGroup(group);
+  const resetToDefaults = onReset || store.resetToDefaults;
   const [isOpen, setIsOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(groups)
   );
   const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredMetadata = searchQuery
+    ? metadata.filter(
+        (m) =>
+          (!availableColumns || availableColumns.includes(m.column)) &&
+          (m.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          m.column.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : metadata.filter((m) => !availableColumns || availableColumns.includes(m.column));
+
+  const filteredGroups = searchQuery
+    ? [...new Set(filteredMetadata.map((m) => m.group))]
+    : (groupsOverride || [...new Set(filteredMetadata.map((m) => m.group))]);
 
   const toggleGroup = (group: string) => {
     const next = new Set(expandedGroups);
@@ -53,12 +86,12 @@ export function ColumnSelector() {
   };
 
   const isGroupFullySelected = (group: string) => {
-    const groupCols = metadata.filter((m) => m.group === group);
-    return groupCols.every((m) => visibleColumns.includes(m.column));
+    const groupCols = filteredMetadata.filter((m) => m.group === group);
+    return groupCols.length > 0 && groupCols.every((m) => visibleColumns.includes(m.column));
   };
 
   const isGroupPartiallySelected = (group: string) => {
-    const groupCols = metadata.filter((m) => m.group === group);
+    const groupCols = filteredMetadata.filter((m) => m.group === group);
     const selected = groupCols.filter((m) =>
       visibleColumns.includes(m.column)
     );
@@ -67,17 +100,7 @@ export function ColumnSelector() {
 
   if (!metadata.length) return null;
 
-  const filteredMetadata = searchQuery
-    ? metadata.filter(
-        (m) =>
-          m.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.column.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : metadata;
 
-  const filteredGroups = searchQuery
-    ? [...new Set(filteredMetadata.map((m) => m.group))]
-    : groups;
 
   return (
     <>

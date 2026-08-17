@@ -4,7 +4,7 @@
  * This hook:
  * 1. Loads the dashboard snapshot via REST on mount
  * 2. Loads column metadata on mount
- * 3. Loads market status and indices
+ * 3. Loads market status
  * 4. TanStack Query handles caching, refetching, and stale data
  */
 
@@ -18,12 +18,11 @@ import {
   fetchDashboard,
   fetchMetadata,
   fetchMarketStatus,
-  fetchIndices,
 } from "@/services/data";
 import { useEffect } from "react";
 
-export function useLiveData() {
-  const { setStocks, setCacheInfo, setMarketStatus, setIndices, setLoading, setError } =
+export function useGlobalMarketData() {
+  const { setStocks, setCacheInfo, setMarketStatus, setLoading, setError } =
     useMarketStore();
   const { setMetadata } = useColumnStore();
 
@@ -65,17 +64,6 @@ export function useLiveData() {
     staleTime: REFRESH_INTERVALS.MARKET_STATUS,
   });
 
-  // ── Indices ──────────────────────────────────────────────────────
-  const indicesQuery = useQuery({
-    queryKey: ["indices"],
-    queryFn: async () => {
-      const res = await fetchIndices();
-      if (!res.success) throw new Error(res.error?.message);
-      return res.data;
-    },
-    refetchInterval: REFRESH_INTERVALS.INDICES,
-    staleTime: REFRESH_INTERVALS.INDICES,
-  });
 
   // Sync query results to stores
   useEffect(() => {
@@ -97,9 +85,6 @@ export function useLiveData() {
     if (statusQuery.data) setMarketStatus(statusQuery.data);
   }, [statusQuery.data, setMarketStatus]);
 
-  useEffect(() => {
-    if (indicesQuery.data) setIndices(indicesQuery.data);
-  }, [indicesQuery.data, setIndices]);
 
   return {
     isLoading: dashboardQuery.isLoading,

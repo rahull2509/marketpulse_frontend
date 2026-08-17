@@ -9,6 +9,7 @@ interface PaginationProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   pageSizeOptions?: number[];
+  maxItems?: number;
 }
 
 export function Pagination({
@@ -18,10 +19,12 @@ export function Pagination({
   onPageChange,
   onPageSizeChange,
   pageSizeOptions = [25, 50, 100, 250],
+  maxItems,
 }: PaginationProps) {
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
+  const effectiveTotal = maxItems ? Math.min(totalItems, maxItems) : totalItems;
+  const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
+  const startItem = effectiveTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, effectiveTotal);
 
   // Generate visible page numbers
   const getPageNumbers = (): (number | "ellipsis")[] => {

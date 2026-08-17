@@ -118,6 +118,30 @@ export const useColumnStore = create<ColumnState>()(
     }),
     {
       name: "marketpulse-columns",
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        if (version === 0) {
+          const state = persistedState as Partial<ColumnState>;
+          const keyMap: Record<string, string> = {
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume"
+          };
+          
+          const migrateList = (list: string[] | undefined) => 
+            list?.map(col => keyMap[col] || col) || [];
+
+          if (state.visibleColumns) state.visibleColumns = migrateList(state.visibleColumns);
+          if (state.columnOrder) state.columnOrder = migrateList(state.columnOrder);
+          if (state.pinnedColumns) {
+            state.pinnedColumns.left = migrateList(state.pinnedColumns.left);
+            state.pinnedColumns.right = migrateList(state.pinnedColumns.right);
+          }
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
         visibleColumns: state.visibleColumns,
         columnOrder: state.columnOrder,

@@ -18,8 +18,6 @@ import {
   SkeletonCards,
   SkeletonToolbar,
 } from "@/components/common/States";
-import { useLiveData } from "@/hooks/useLiveData";
-import { useWebSocket } from "@/hooks/useWebSocket";
 import { useMarketStore } from "@/stores/market";
 import { useColumnStore } from "@/stores/columns";
 import { RotateCw, Download, SearchX } from "lucide-react";
@@ -29,11 +27,12 @@ export default function DashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const { pageSize } = useColumnStore();
   const tableRef = useRef<DynamicTableRef>(null);
-  const { isLoading, error, refetch } = useLiveData();
-  useWebSocket();
-
-  const { stocks, isLoading: storeLoading, marketStatus } = useMarketStore();
-  const loading = isLoading || storeLoading;
+  const { stocks, isLoading: storeLoading, marketStatus, error } = useMarketStore();
+  const loading = storeLoading;
+  
+  const refetch = () => {
+    window.location.reload();
+  };
 
   // Filter stocks by search query
   const filteredStocks = useMemo(() => {

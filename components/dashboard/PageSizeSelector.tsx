@@ -2,8 +2,14 @@
 
 import { useColumnStore } from "@/stores/columns";
 
-export function PageSizeSelector() {
-  const { pageSize, setPageSize } = useColumnStore();
+interface PageSizeSelectorProps {
+  options?: number[];
+  storeHook?: typeof useColumnStore;
+}
+
+export function PageSizeSelector({ options = [25, 50, 100, 250], storeHook }: PageSizeSelectorProps = {}) {
+  const useStore = storeHook || useColumnStore;
+  const { pageSize, setPageSize } = useStore();
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexShrink: 0 }}>
@@ -20,10 +26,11 @@ export function PageSizeSelector() {
           minWidth: 60,
         }}
       >
-        <option value={25}>25</option>
-        <option value={50}>50</option>
-        <option value={100}>100</option>
-        <option value={250}>250</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
       </select>
     </div>
   );

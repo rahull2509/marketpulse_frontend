@@ -8,6 +8,7 @@ import {
   Clock,
   Settings,
   Activity,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 import { useWebSocketStore } from "@/stores/websocket";
@@ -19,6 +20,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   ScanSearch,
   Clock,
   Settings,
+  CalendarClock,
 };
 
 function NavItem({

@@ -6,7 +6,7 @@ import { api } from "./api";
 import { ENDPOINTS } from "@/constants/api";
 import type { DashboardData, StockRecord, IndexData, MarketStatusData, HealthData } from "@/types/stock";
 import type { MetadataResponse } from "@/types/metadata";
-import type { ScannerRequest, ScannerPreset } from "@/types/scanner";
+import type { ScannerRequest, ScannerPreset, UnifiedQueryRequest } from "@/types/scanner";
 import type { ApiResponse, PaginationMeta } from "@/types/api";
 
 // ── Dashboard ──────────────────────────────────────────────────────────
@@ -48,8 +48,11 @@ export async function fetchStockDetail(symbol: string): Promise<ApiResponse<Stoc
 
 // ── Metadata ───────────────────────────────────────────────────────────
 
-export async function fetchMetadata(): Promise<ApiResponse<MetadataResponse>> {
-  return api.get<MetadataResponse>(ENDPOINTS.METADATA);
+export async function fetchMetadata(target?: "live" | "history", date?: string): Promise<ApiResponse<MetadataResponse>> {
+  const queryParams: Record<string, string> = {};
+  if (target) queryParams.target = target;
+  if (date) queryParams.date = date;
+  return api.get<MetadataResponse>(ENDPOINTS.METADATA, queryParams);
 }
 
 // ── Market Status ──────────────────────────────────────────────────────
@@ -58,9 +61,6 @@ export async function fetchMarketStatus(): Promise<ApiResponse<MarketStatusData>
   return api.get<MarketStatusData>(ENDPOINTS.MARKET_STATUS);
 }
 
-export async function fetchIndices(): Promise<ApiResponse<IndexData[]>> {
-  return api.get<IndexData[]>(ENDPOINTS.INDICES);
-}
 
 // ── History ────────────────────────────────────────────────────────────
 
@@ -71,6 +71,8 @@ export interface HistoryParams {
   end_time?: string;
   page?: number;
   page_size?: number;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
 }
 
 export async function fetchHistory(params: HistoryParams = {}) {
@@ -81,8 +83,13 @@ export async function fetchHistory(params: HistoryParams = {}) {
   if (params.end_time) queryParams.end_time = params.end_time;
   if (params.page) queryParams.page = String(params.page);
   if (params.page_size) queryParams.page_size = String(params.page_size);
+  if (params.sort_by) queryParams.sort_by = params.sort_by;
+  if (params.sort_order) queryParams.sort_order = params.sort_order;
 
-  return api.get<StockRecord[]>(ENDPOINTS.HISTORY, queryParams);
+  return api.get<StockRecord[]>(ENDPOINTS.HISTORY, queryParams, {
+    timeout: 120000, // 2 minutes for large parquet downloads
+    retries: 3,
+  });
 }
 
 export async function fetchAvailableDates(): Promise<ApiResponse<string[]>> {
@@ -96,6 +103,10 @@ export async function fetchTimeline(symbol: string, date?: string) {
 }
 
 // ── Scanner ────────────────────────────────────────────────────────────
+
+export async function runQuery(request: UnifiedQueryRequest) {
+  return api.post<StockRecord[]>(ENDPOINTS.SCANNER_QUERY, request);
+}
 
 export async function runScanner(request: ScannerRequest) {
   return api.post<StockRecord[]>(ENDPOINTS.SCANNER, request);

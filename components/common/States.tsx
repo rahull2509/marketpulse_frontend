@@ -310,11 +310,6 @@ export function SkeletonToolbar() {
         <div className="skeleton" style={{ width: 240, height: 36, borderRadius: "var(--radius-sm)" }} />
         <div className="skeleton" style={{ width: 80, height: 14 }} />
       </div>
-      <div style={{ display: "flex", gap: "var(--sp-2)" }}>
-        <div className="skeleton" style={{ width: 80, height: 32, borderRadius: "var(--radius-sm)" }} />
-        <div className="skeleton" style={{ width: 60, height: 32, borderRadius: "var(--radius-sm)" }} />
-        <div className="skeleton" style={{ width: 32, height: 32, borderRadius: "var(--radius-sm)" }} />
-      </div>
     </div>
   );
 }
